@@ -127,7 +127,7 @@ def init_func_preproc_wf(bold_file, has_fieldmap=False):
     * :py:func:`~fmriprep.workflows.bold.t2s.init_bold_t2s_wf`
     * :py:func:`~fmriprep.workflows.bold.registration.init_bold_t1_trans_wf`
     * :py:func:`~fmriprep.workflows.bold.registration.init_bold_reg_wf`
-    * :py:func:`~fmriprep.workflows.bold.confounds.init_bold_confs_wf`
+    * :py:func:`~fmripsrep.workflows.bold.confounds.init_bold_confs_wf`
     * :py:func:`~fmriprep.workflows.bold.confounds.init_ica_aroma_wf`
     * :py:func:`~fmriprep.workflows.bold.resampling.init_bold_std_trans_wf`
     * :py:func:`~fmriprep.workflows.bold.resampling.init_bold_preproc_trans_wf`
@@ -142,8 +142,7 @@ def init_func_preproc_wf(bold_file, has_fieldmap=False):
     from niworkflows.engine.workflows import LiterateWorkflow as Workflow
     from niworkflows.func.util import init_bold_reference_wf
     from niworkflows.interfaces.nibabel import ApplyMask
-    from niworkflows.interfaces.utility import KeySelect
-    from niworkflows.interfaces.utils import DictMerge
+    from niworkflows.interfaces.utility import KeySelect, DictMerge
 
     mem_gb = {'filesize': 1, 'resampled': 1, 'largemem': 1}
     bold_tlen = 10
@@ -391,7 +390,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
         mem_gb=mem_gb['resampled'],
         omp_nthreads=omp_nthreads,
         use_compression=not config.execution.low_mem,
-        use_fieldwarp=False,  # Fieldwarp is already applied in new SDCFlows
+        use_fieldwarp=has_fieldmap,
         name='bold_bold_trans_wf'
     )
     bold_bold_trans_wf.inputs.inputnode.name_source = ref_file
@@ -501,8 +500,8 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
             ('outputnode.itk_t1_to_bold', 'inputnode.t1_bold_xform')]),
         (initial_boldref_wf, bold_confounds_wf, [
             ('outputnode.skip_vols', 'inputnode.skip_vols')]),
-        (final_boldref_wf, bold_confounds_wf, [
-            ('outputnode.bold_mask', 'inputnode.bold_mask')]),
+        # (final_boldref_wf, bold_confounds_wf, [
+        #     ('outputnode.bold_mask', 'inputnode.bold_mask')]),
         (bold_confounds_wf, outputnode, [
             ('outputnode.confounds_file', 'confounds'),
             ('outputnode.confounds_metadata', 'confounds_metadata'),
@@ -825,7 +824,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
             (initial_boldref_wf, bold_reg_wf, [
                 ('outputnode.ref_image_brain', 'inputnode.ref_bold_brain'),
             ]),
-            (initial_boldref_wf, bold_confounds_wf, [
+            (final_boldref_wf, bold_confounds_wf, [
                 ('outputnode.bold_mask', 'inputnode.bold_mask')
             ]),
         ])
@@ -909,6 +908,10 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
         (inputnode, ds_report_sdc, [("bold_file", "source_file")]),
         (sdc_report, ds_report_sdc, [("out_report", "in_file")]),
         # remaining workflow connections
+        (unwarp_wf, bold_bold_trans_wf, [
+            ('outputnode.corrected_mask', 'inputnode.bold_mask'),
+            ('outputnode.fieldmap', 'inputnode.fieldwarp'),
+        ]),
         (unwarp_masker, bold_bold_trans_wf, [
             ('out_mask', 'inputnode.bold_mask')]),
         (unwarp_wf, unwarp_masker, [('outputnode.corrected', 'in_file')]),
@@ -919,20 +922,38 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
         (unwarp_masker, bold_reg_wf, [
             ('out_file', 'inputnode.ref_bold_brain')]),
     ])
+
+    if not multiecho:
+        workflow.connect([
+            (unwarp_wf, bold_t1_trans_wf, [
+                ('outputnode.fieldmap', 'inputnode.fieldwarp'),
+            ]),
+            (unwarp_wf, bold_std_trans_wf, [
+                ('outputnode.fieldmap', 'inputnode.fieldwarp')]),
+        ])
     # fmt: on
 
     return workflow
 
 
 def _get_series_len(bold_fname):
-    from niworkflows.interfaces.registration import _get_vols_to_discard
+    from nipype.algorithms.confounds import is_outlier
+    import nibabel as nb
+    import numpy as np
+
     img = nb.load(bold_fname)
     if len(img.shape) < 4:
         return 1
 
-    skip_vols = _get_vols_to_discard(img)
-
-    return img.shape[3] - skip_vols
+    data = img.get_fdata(dtype="float32")
+    # Data can come with outliers showing very high numbers - preemptively prune
+    data = np.clip(
+        data,
+        a_min=0.0,
+        a_max=np.percentile(data, 99.8),
+    )
+    outliers = is_outlier(np.mean(data, axis=(0, 1, 2)))
+    return img.shape[3] - outliers
 
 
 def _create_mem_gb(bold_fname):

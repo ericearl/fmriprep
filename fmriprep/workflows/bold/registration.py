@@ -260,7 +260,7 @@ def init_bold_t1_trans_wf(freesurfer, mem_gb, omp_nthreads, use_compression=True
     from niworkflows.interfaces.fixes import FixHeaderApplyTransforms as ApplyTransforms
     from niworkflows.interfaces.itk import MultiApplyTransforms
     from niworkflows.interfaces.nilearn import Merge
-    from niworkflows.interfaces.utils import GenerateSamplingReference
+    from niworkflows.interfaces.nibabel import GenerateSamplingReference
 
     workflow = Workflow(name=name)
     inputnode = pe.Node(
