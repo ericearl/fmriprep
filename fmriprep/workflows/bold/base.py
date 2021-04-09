@@ -912,8 +912,6 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf`
             ('outputnode.corrected_mask', 'inputnode.bold_mask'),
             ('outputnode.fieldmap', 'inputnode.fieldwarp'),
         ]),
-        (unwarp_masker, bold_bold_trans_wf, [
-            ('out_mask', 'inputnode.bold_mask')]),
         (unwarp_wf, unwarp_masker, [('outputnode.corrected', 'in_file')]),
         (unwarp_masker, bold_confounds_wf, [('out_mask', 'inputnode.bold_mask')]),
         (unwarp_masker, bold_t1_trans_wf, [
@@ -991,7 +989,7 @@ def _get_wf_name(bold_fname):
 
 def _to_join(in_file, join_file):
     """Join two tsv files if the join_file is not ``None``."""
-    from niworkflows.interfaces.utilty import JoinTSVColumns
+    from niworkflows.interfaces.utility import JoinTSVColumns
     if join_file is None:
         return in_file
     res = JoinTSVColumns(in_file=in_file, join_file=join_file).run()
