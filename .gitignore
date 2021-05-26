@@ -79,3 +79,6 @@ secrets.py
 local_settings.py
 
 *.swp
+
+# Visual Studio Code settings
+.vscode/
